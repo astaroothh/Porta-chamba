@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+pymysql
+python-docx
+jinja2
+pydantic
