@@ -85,11 +85,44 @@
   </div>
 
   <div class="card">
+    <strong>Envío rápido desde el navegador</strong> (para pruebas o hasta 15 vacantes pendientes)
+    <p style="color:var(--text-dim);font-size:0.85rem;">
+      Envía ya mismo lo que esté en estado "cv_generado", sin pausas entre correos.
+      Para tu volumen real del día a día, usa el script local (abajo) — es más seguro.
+    </p>
+    <button onclick="enviarAhora()">Enviar pendientes ahora</button>
+    <p id="resultado-envio"></p>
+  </div>
+
+  <div class="card">
     <strong>En tu PC</strong>, ahora solo necesitas dos variables (todo lo demás lo trae del servidor):
     <pre style="background:var(--panel-2);padding:0.8rem;border-radius:6px;overflow-x:auto;">export PORTAL_URL="https://tu-app.up.railway.app"
 export API_TOKEN="tu_token"
 python send_pending.py</pre>
   </div>
+
+<script>
+async function enviarAhora() {
+  const resultado = document.getElementById('resultado-envio');
+  resultado.style.color = 'var(--text-dim)';
+  resultado.innerText = 'Enviando...';
+  try {
+    const res = await fetch('/api/enviar-pendientes', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) {
+      resultado.style.color = '#f0616c';
+      resultado.innerText = data.detail;
+      return;
+    }
+    resultado.style.color = 'var(--verde)';
+    resultado.innerText = `Enviados: ${data.enviados.length}. ` +
+      (data.errores.length ? `Errores: ${data.errores.join(' | ')}` : 'Sin errores.');
+  } catch (e) {
+    resultado.style.color = '#f0616c';
+    resultado.innerText = 'Error de conexión: ' + e;
+  }
+}
+</script>
 
 <script>
 async function guardar() {
