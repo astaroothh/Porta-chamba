@@ -70,7 +70,7 @@ def dashboard(request: Request):
     with conn.cursor() as cur:
         cur.execute("SELECT * FROM vacantes ORDER BY fecha_creacion DESC")
         vacantes = cur.fetchall()
-    return templates.TemplateResponse("dashboard.html", {"request": request, "vacantes": vacantes})
+    return templates.TemplateResponse(request, "dashboard.html", {"vacantes": vacantes})
 
 
 # ---------- Registrar vacantes (formulario web o script de scraping/API) ----------
@@ -175,8 +175,7 @@ def pagina_editar(vacante_id: int, request: Request):
     )
     habilidades_texto = (vacante["habilidades_orden"] or "\n".join(habilidades_cubiertas)).replace(", ", "\n")
 
-    return templates.TemplateResponse("editar.html", {
-        "request": request,
+    return templates.TemplateResponse(request, "editar.html", {
         "vacante": vacante,
         "perfil_sugerido": perfil_sugerido,
         "habilidades_texto": habilidades_texto,
@@ -233,7 +232,7 @@ def pagina_plantilla_correo(request: Request):
     with conn.cursor() as cur:
         cur.execute("SELECT * FROM plantilla_correo WHERE id=1")
         plantilla = cur.fetchone()
-    return templates.TemplateResponse("plantilla_correo.html", {"request": request, "plantilla": plantilla})
+    return templates.TemplateResponse(request, "plantilla_correo.html", {"plantilla": plantilla})
 
 
 @app.post("/api/plantilla-correo")
@@ -273,8 +272,8 @@ def pagina_configuracion_envio(request: Request):
         "respondida": conteos.get("respondida", 0),
         "entrevista": conteos.get("entrevista", 0),
     }
-    return templates.TemplateResponse("configuracion_envio.html", {
-        "request": request, "config": config_smtp, "stats": stats,
+    return templates.TemplateResponse(request, "configuracion_envio.html", {
+        "config": config_smtp, "stats": stats,
     })
 
 
