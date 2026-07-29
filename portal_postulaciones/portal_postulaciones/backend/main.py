@@ -1,4 +1,8 @@
 from pathlib import Path
+import smtplib
+import ssl
+from email.message import EmailMessage
+
 from fastapi import FastAPI, HTTPException, Header, Request
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
@@ -48,6 +52,30 @@ def _ruta_docx(vacante) -> Path:
     nombre = f"CV_{vacante['empresa']}_{vacante['cargo']}"
     nombre = "".join(c for c in nombre if c.isalnum() or c in " _-").replace(" ", "_")
     return Path("cvs_generados") / f"{nombre}.docx"
+
+
+def _asegurar_cv(vacante) -> Path:
+    """
+    Devuelve la ruta del .docx, regenerándolo si el archivo no existe en disco
+    (por ejemplo, porque Railway reinició el contenedor y se perdió el archivo).
+    Usa el perfil/habilidades editados si el usuario ya los guardó, o los
+    recalcula desde las palabras_clave guardadas en la vacante.
+    """
+    ruta = _ruta_docx(vacante)
+    if ruta.exists():
+        return ruta
+
+    habilidades_cubiertas = [h.strip() for h in (vacante["palabras_clave"] or "").split(",") if h.strip()]
+    habilidades_orden = None
+    if vacante.get("habilidades_orden"):
+        habilidades_orden = [h.strip() for h in vacante["habilidades_orden"].split(",") if h.strip()]
+
+    return generar_cv(
+        {"id": vacante["id"], "empresa": vacante["empresa"], "cargo": vacante["cargo"]},
+        habilidades_cubiertas=habilidades_cubiertas,
+        perfil_override=vacante.get("perfil_editado"),
+        habilidades_orden_override=habilidades_orden,
+    )
 
 
 def _verificar_token(token: str | None):
@@ -137,9 +165,7 @@ def descargar_cv(vacante_id: int, token: str = Header(None, alias="X-API-Token")
     if not vacante:
         raise HTTPException(status_code=404, detail="Vacante no encontrada")
 
-    ruta = _ruta_docx(vacante)
-    if not ruta.exists():
-        raise HTTPException(status_code=404, detail="CV no generado aún")
+    ruta = _asegurar_cv(vacante)
     return FileResponse(ruta, filename=ruta.name)
 
 
@@ -216,10 +242,7 @@ def descargar_cv_pdf(vacante_id: int):
     if not vacante:
         raise HTTPException(status_code=404, detail="Vacante no encontrada")
 
-    ruta_docx = _ruta_docx(vacante)
-    if not ruta_docx.exists():
-        raise HTTPException(status_code=404, detail="CV no generado aún")
-
+    ruta_docx = _asegurar_cv(vacante)
     ruta_pdf = convertir_a_pdf(ruta_docx)
     return FileResponse(ruta_pdf, filename=ruta_pdf.name)
 
@@ -297,3 +320,75 @@ def obtener_config_smtp(token: str = Header(None, alias="X-API-Token")):
     with conn.cursor() as cur:
         cur.execute("SELECT * FROM config_smtp WHERE id=1")
         return cur.fetchone()
+
+
+# ---------- Envío directo desde el servidor (para pruebas o lotes chicos) ----------
+# Para tu volumen real (~200/día) usa el script local — ver send_pending.py.
+# Aquí no hay pausas entre envíos y hay un límite de 15 para no colgar la petición
+# ni exponer la IP compartida de Railway a un envío masivo real.
+
+LIMITE_ENVIO_DIRECTO = 15
+
+
+@app.post("/api/enviar-pendientes")
+def enviar_pendientes_directo():
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute("SELECT * FROM vacantes WHERE estado='cv_generado'")
+        pendientes = cur.fetchall()
+        cur.execute("SELECT * FROM config_smtp WHERE id=1")
+        cfg = cur.fetchone()
+        cur.execute("SELECT * FROM plantilla_correo WHERE id=1")
+        plantilla = cur.fetchone()
+
+    if not cfg.get("smtp_user") or not cfg.get("smtp_pass"):
+        raise HTTPException(status_code=400, detail="Configura el correo en /configuracion-envio primero")
+    if len(pendientes) > LIMITE_ENVIO_DIRECTO:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tienes {len(pendientes)} pendientes — más de {LIMITE_ENVIO_DIRECTO}. "
+                   f"Usa send_pending.py en tu PC para lotes grandes (más seguro y sin límite de tiempo).",
+        )
+
+    enviados, errores = [], []
+    contexto = ssl.create_default_context()
+    with smtplib.SMTP(cfg["smtp_host"], cfg["smtp_port"]) as smtp:
+        smtp.starttls(context=contexto)
+        smtp.login(cfg["smtp_user"], cfg["smtp_pass"])
+
+        for vacante in pendientes:
+            try:
+                if not vacante.get("email_contacto"):
+                    errores.append(f"{vacante['empresa']}: sin email de contacto")
+                    continue
+
+                ruta_cv = _asegurar_cv(vacante)
+                asunto = plantilla["asunto_tpl"].format(cargo=vacante["cargo"], empresa=vacante["empresa"])
+                cuerpo = plantilla["cuerpo_tpl"].format(cargo=vacante["cargo"], empresa=vacante["empresa"])
+                cc = vacante.get("cc_contacto") or plantilla.get("cc_default")
+
+                msg = EmailMessage()
+                msg["From"] = cfg["smtp_user"]
+                msg["To"] = vacante["email_contacto"]
+                if cc:
+                    msg["Cc"] = cc
+                msg["Subject"] = asunto
+                msg.set_content(cuerpo)
+                msg.add_attachment(
+                    ruta_cv.read_bytes(),
+                    maintype="application",
+                    subtype="vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    filename=ruta_cv.name,
+                )
+                smtp.send_message(msg)
+
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE vacantes SET estado='enviada', fecha_envio=NOW() WHERE id=%s",
+                        (vacante["id"],),
+                    )
+                enviados.append(vacante["empresa"])
+            except Exception as e:
+                errores.append(f"{vacante['empresa']}: {e}")
+
+    return {"enviados": enviados, "errores": errores}
