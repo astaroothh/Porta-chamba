@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Plantilla de correo masivo</title>
+<style>
+  :root {
+    --bg: #0d0d11; --panel-2: #1e1e26; --border: #2a2a34;
+    --text: #e8e8ec; --text-dim: #9a9aa8; --accent: #7c6cf0; --accent-hover: #6a5adf;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; margin: 0; display: flex; height: 100vh; }
+  .panel { width: 45%; padding: 1.5rem; overflow-y: auto; background: var(--bg); color: var(--text); }
+  .preview { width: 55%; padding: 2rem; overflow-y: auto; background: #fafafa; color: #1a1a1a; }
+  input, textarea {
+    width: 100%; padding: 0.6rem; font-family: inherit; margin-bottom: 1rem;
+    background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; color: var(--text);
+  }
+  input:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  label { font-weight: bold; display: block; margin-top: 0.5rem; color: var(--text-dim); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.03em; }
+  button { padding: 0.6rem 1.1rem; cursor: pointer; border: none; border-radius: 6px; background: var(--accent); color: white; font-weight: 600; }
+  button:hover { background: var(--accent-hover); }
+  .aviso { background: #2a2410; color: #e8c547; border: 1px solid #4a4020; padding: 0.7rem; border-radius: 6px; font-size: 0.85rem; margin-bottom: 1rem; }
+  .preview-box { border: 1px solid #ddd; border-radius: 8px; padding: 1rem; }
+  #estado { color: #3ddc84; }
+</style>
+</head>
+<body>
+  <div class="panel">
+    <h2>Plantilla de correo masivo</h2>
+    <p class="aviso">Esta plantilla se aplica a <strong>todas</strong> las vacantes pendientes de envío.
+    Usa <code>{cargo}</code> y <code>{empresa}</code> donde quieras que se reemplacen automáticamente.</p>
+
+    <label>Asunto</label>
+    <input id="asunto" value="{{ plantilla.asunto_tpl }}" oninput="actualizarPreview()">
+
+    <label>Cuerpo</label>
+    <textarea id="cuerpo" rows="10" oninput="actualizarPreview()">{{ plantilla.cuerpo_tpl }}</textarea>
+
+    <label>Copia (CC) por defecto — opcional</label>
+    <input id="cc" value="{{ plantilla.cc_default or '' }}" placeholder="correo@ejemplo.com">
+
+    <button onclick="guardar()">Guardar plantilla</button>
+    <p id="estado"></p>
+  </div>
+
+  <div class="preview">
+    <h3>Vista previa (con datos de ejemplo)</h3>
+    <div class="preview-box">
+      <p><strong>Asunto:</strong> <span id="prev-asunto"></span></p>
+      <p><strong>CC:</strong> <span id="prev-cc"></span></p>
+      <p><strong>Cuerpo:</strong></p>
+      <p id="prev-cuerpo" style="white-space: pre-wrap;"></p>
+    </div>
+  </div>
+
+<script>
+const EJEMPLO = { cargo: "Desarrollador Backend", empresa: "TechCorp S.A.S" };
+
+function actualizarPreview() {
+  const asunto = document.getElementById('asunto').value
+    .replaceAll('{cargo}', EJEMPLO.cargo).replaceAll('{empresa}', EJEMPLO.empresa);
+  const cuerpo = document.getElementById('cuerpo').value
+    .replaceAll('{cargo}', EJEMPLO.cargo).replaceAll('{empresa}', EJEMPLO.empresa);
+  document.getElementById('prev-asunto').innerText = asunto;
+  document.getElementById('prev-cuerpo').innerText = cuerpo;
+  document.getElementById('prev-cc').innerText = document.getElementById('cc').value || '(sin copia)';
+}
+
+async function guardar() {
+  const body = {
+    asunto_tpl: document.getElementById('asunto').value,
+    cuerpo_tpl: document.getElementById('cuerpo').value,
+    cc_default: document.getElementById('cc').value || null,
+  };
+  const res = await fetch('/api/plantilla-correo', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  document.getElementById('estado').innerText = res.ok ? 'Plantilla guardada.' : 'Error al guardar.';
+}
+
+actualizarPreview();
+</script>
+</body>
+</html>

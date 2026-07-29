@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Editar CV — {{ vacante.empresa }}</title>
+<style>
+  :root {
+    --bg: #0d0d11; --panel-2: #1e1e26; --border: #2a2a34;
+    --text: #e8e8ec; --text-dim: #9a9aa8; --accent: #7c6cf0; --accent-hover: #6a5adf;
+  }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; margin: 0; display: flex; height: 100vh; }
+  .panel { width: 40%; padding: 1.5rem; overflow-y: auto; background: var(--bg); color: var(--text); }
+  .preview { width: 60%; padding: 2rem 3rem; overflow-y: auto; background: #fafafa; color: #1a1a1a; }
+  textarea {
+    width: 100%; padding: 0.6rem; font-family: inherit; background: var(--panel-2);
+    border: 1px solid var(--border); border-radius: 6px; color: var(--text);
+  }
+  textarea:focus { outline: none; border-color: var(--accent); }
+  label { font-weight: bold; display: block; margin-top: 1rem; color: var(--text-dim); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.03em; }
+  .acciones { margin-top: 1.5rem; display: flex; gap: 0.6rem; }
+  button, .pdf { padding: 0.6rem 1.1rem; cursor: pointer; border: none; border-radius: 6px; font-weight: 600; }
+  .guardar { background: var(--accent); color: white; }
+  .guardar:hover { background: var(--accent-hover); }
+  .pdf { background: #3ddc84; color: #0d0d11; text-decoration: none; display: inline-block; }
+  #preview-perfil { white-space: pre-wrap; }
+</style>
+</head>
+<body>
+  <div class="panel">
+    <h2>Editar CV — {{ vacante.cargo }} en {{ vacante.empresa }}</h2>
+
+    <label>Perfil</label>
+    <textarea id="perfil" rows="8" oninput="actualizarPreview()">{{ vacante.perfil_editado or perfil_sugerido }}</textarea>
+
+    <label>Habilidades (una por línea, en el orden que quieras que aparezcan)</label>
+    <textarea id="habilidades" rows="6" oninput="actualizarPreview()">{{ habilidades_texto }}</textarea>
+
+    <div class="acciones">
+      <button class="guardar" onclick="guardarCambios()">Guardar cambios</button>
+      <a class="pdf" id="btn-pdf" href="/api/vacantes/{{ vacante.id }}/cv.pdf">Descargar PDF</a>
+    </div>
+    <p id="estado-guardado" style="color:#157347;"></p>
+  </div>
+
+  <div class="preview">
+    <h1>{{ datos_fijos.nombre }}</h1>
+    <p>{{ datos_fijos.telefono }} | {{ datos_fijos.email }}</p>
+    <h3>Perfil</h3>
+    <p id="preview-perfil">{{ vacante.perfil_editado or perfil_sugerido }}</p>
+    <h3>Habilidades Técnicas</h3>
+    <p id="preview-habilidades">{{ habilidades_texto.replace('\n', ', ') }}</p>
+    <p style="color:#888;font-size:0.85rem;">
+      (Estudios y experiencia laboral se mantienen igual en todas las versiones —
+      solo el perfil y el orden de habilidades cambian por vacante.)
+    </p>
+  </div>
+
+<script>
+function actualizarPreview() {
+  document.getElementById('preview-perfil').innerText = document.getElementById('perfil').value;
+  const habilidades = document.getElementById('habilidades').value.split('\n').filter(Boolean).join(', ');
+  document.getElementById('preview-habilidades').innerText = habilidades;
+}
+
+async function guardarCambios() {
+  const perfil = document.getElementById('perfil').value;
+  const habilidades = document.getElementById('habilidades').value.split('\n').filter(Boolean);
+
+  const res = await fetch('/api/vacantes/{{ vacante.id }}/editar', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ perfil, habilidades }),
+  });
+
+  const estado = document.getElementById('estado-guardado');
+  if (res.ok) {
+    estado.innerText = 'Cambios guardados. Ya puedes descargar el PDF actualizado.';
+  } else {
+    estado.style.color = '#b02a37';
+    estado.innerText = 'Error al guardar.';
+  }
+}
+</script>
+</body>
+</html>
